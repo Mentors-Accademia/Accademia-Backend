@@ -1,489 +1,442 @@
-const express = require("express")
-const router = express.Router()
-const Role = require("../Schema/Role")
-const signUp = require("../Schema/Signup")
-const Course = require("../Schema/Course")
-const Teacher = require("../Schema/Teacher")
-const School = require("../Schema/School")
-const bcrypt = require("bcrypt")
+const express = require("express");
+// const serverless = require('serverless-http');
+const User = require("../Schema/User");
+const Admin = require("../Schema/Admin");
+const Post = require("../Schema/Post");
+const Category = require("../Schema/Category");
+const JWT_SECRET = "habibisagoodb#oy";
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const bcrypt = require("bcrypt");
 
-const uploadDirectory = path.join(__dirname, "uploads");
-
-// Create the uploads directory if it doesn't exist
-if (!fs.existsSync(uploadDirectory)) {
-    fs.mkdirSync(uploadDirectory, { recursive: true });
-}
+// const app = express();
+const router = express.Router();
+const jwt = require("jsonwebtoken");
+const { body, validationResult } = require("express-validator");
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDirectory);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + "-" + uniqueSuffix + "." + file.mimetype.split("/")[1]);
-    }
+  destination: (req, file, cb) => {
+    cb(null, "uploads/"); // Specify the directory where uploaded files will be stored
+  },
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  },
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
-// Api for creating Role
-router.post("/addRole", async (req, res) => {
-    try {
-        const { role } = req.body
-        const newRole = await Role.create({
-            role
-        })
-        res.json(newRole)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+let hardcodedUser = {
+  email: "capobrain@gmail.com",
+  password: "$2a$10$UQoTsfaaoUYdx0Kzl51.QOU9E5dZsU5dE4yCk53UCfbCHTwl3OAGu",
+};
+// Route 1: create user using: api/auth/createuser
+router.post(
+  "/createuser",
+  [
+    body("name", "Enter a valid name").isLength({ min: 3 }),
+    body("schoolname", "Enter a valid School name").isLength({ min: 3 }),
+    body("phoneno", "Phone no must be at least 11 char long").isLength({
+      min: 11,
+    }),
+    body("message", "Enter your message here"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+    try {
+      const { name, email, schoolname, phoneno, message } = req.body;
+
+      const user = await User.create({
+        name,
+        email,
+        schoolname,
+        phoneno,
+        message,
+      });
+
+      res.json({ user });
+    } catch (error) {
+      res.status(500).send("Internal error occured");
+      console.log(error);
+    }
+  }
+);
+
+router.get("/getallusers", async (req, res) => {
+  try {
+    const allusers = await User.find({});
+    res.json(allusers);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+router.get("/getusers/:id", async(req,res)=>{
+  try {
+    const getUserId = await User.findById(req.params.id)
+    res.json(getUserId)
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
 })
 
-// Api for adding user
-router.post("/adduser", async (req, res) => {
-    try {
-        const { email, password, role, confirmPassword, name } = req.body
-
-        const checkUserr = await signUp.findOne({ email })
-        if (checkUserr) {
-            return res.status(400).json({ message: "user with this email already exists" })
-        }
-        // confirm password
-        if (password !== confirmPassword) {
-            return res.status(400).json({ message: "Password does not match" })
-        }
-
-        const hashPassword = await bcrypt.hash(password, 10)
-
-        const newUserr = await signUp.create({
-            name,
-            email,
-            password: hashPassword,
-            role
-        })
-
-        res.json(newUserr)
-
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+router.delete("/deluser/:id", async(req,res)=>{
+  try {
+    const getUserId = await User.findByIdAndDelete(req.params.id)
+    if (!getUserId) {
+      return res.status(404).json({message:"user not found"})
     }
+    res.status(200).json({message:"successfully deleted"})
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
 })
 
-// Api for signup
-router.post("/signup", async (req, res) => {
-    try {
-        const { email, password, confirmPassword, name } = req.body;
-        // check email
-        const checkEmail = await signUp.findOne({ email })
-        if (checkEmail) {
-            return res.status(400).json({ message: "user with this email already exists" })
-        }
-        // confirm password
-        if (password !== confirmPassword) {
-            return res.status(400).json({ message: "Password does not match" })
-        }
-        // hash password
-        const hashPasword = await bcrypt.hash(password, 10)
-        // create new user
-        const newSignUser = await signUp.create({
-            name,
-            email,
-            password: hashPasword,
-            role: "customer"
-        })
+router.get("/edituser/:id", async(req,res)=>{
+  try {
+    const { name, email, schoolname, phoneno, message } = req.body;
 
-
-        res.status(200).json(newSignUser);
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occred")
-    }
-
-})
-
-// create default user
-const defaultUser = async () => {
-    try {
-        const defaultEmail = "mentorsacademia@gmail.com"
-        const defaultName = "Mentors Admin"
-        const defaultPassword = "Mentors@@345"
-
-        const checkDefaultEmail = await signUp.findOne({ email: defaultEmail })
-
-        if (checkDefaultEmail) {
-            return;
-        }
-
-        if (!checkDefaultEmail) {
-            const hashPassword = await bcrypt.hash(defaultPassword, 10);
-
-            const defaultUser = await signUp.create({
-                name: defaultName,
-                email: defaultEmail,
-                password: hashPassword,
-                role: "admin"
-            });
-
-            console.log("Default user created:", defaultUser);
-        }
-    } catch (error) {
-        console.log(error)
-        console.log("Erorr occured during creating default user")
-    }
+    const newUser = {}
+if(name){
+  newUser.name = name
+}
+if(email){
+  newUser.email = email
+}
+if(schoolname){
+  newUser.schoolname = schoolname
+}
+if(phoneno){
+  newUser.phoneno = phoneno
+}
+if(message){
+  newUser.message = message
 }
 
-defaultUser()
-
-//  api for login user
-router.post("/signin", async (req, res) => {
-    try {
-        const { email, password } = req.body
-        const checkUser = await signUp.findOne({ email })
-        if (!checkUser) {
-            return res.status(400).json({ message: "user with this email not found" })
-        }
-        const checkPassword = await bcrypt.compare(password, checkUser.password)
-        if (!checkPassword) {
-            return res.status(400).json({ message: "user with this password not found" })
-        }
-
-        res.json(checkUser)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+let getUserId = await User.findById(req.params.id)
+    if (!getUserId) {
+      return res.status(404).json({message:"user not found"})
     }
+
+    getUserId = await User.findByIdAndUpdate(req.params.id, {$set: newUser}, {new: true})
+    res.json(getUserId)
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
 })
-
-// get all users
-router.get("/allusers", async (req, res) => {
-    try {
-        const allusers = await signUp.find()
-        res.json(allusers)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+// post api start
+router.post(
+  "/createpost",
+  [
+    body("title", "Enter title"),
+    body("title", "Enter category"),
+    body("content", "Enter your content here"),
+  ],
+  upload.single("image"),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+    try {
+      const { title, content, category, slug } = req.body;
+
+      const post = await Post.create({
+        title,
+        content,
+        category,
+        slug,
+      });
+
+      res.json({ post });
+    } catch (error) {
+      res.status(500).send("Internal error occured");
+      console.log(error);
+    }
+  }
+);
+// post api end
+router.get("/postsCount", async(req,res)=>{
+  try {
+    const postCount = await Post.countDocuments({})
+    res.json(postCount)
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).send("internal server error");
+  }
 })
+// get post start
+router.get("/getallposts", async (req, res) => {
+  try {
+    const allposts = await Post.find({});
+    res.json(allposts);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).send("internal server error");
+  }
+});
+// get post end
 
-// get user throgh id
-router.get("/getuser/:id", async (req, res) => {
-    try {
-        const userId = await signUp.findById(req.params.id)
-        if (!userId) {
-            res.status(400).json({ message: "user not exists" })
-        }
-        res.json(userId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+// get post id start
+router.get("/getpost/:slug", async (req, res) => {
+  try {
+    const post = await Post.findOne({ slug: req.params.slug });
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
     }
-})
-// delete user throgh id
-router.delete("/deleteuser/:id", async (req, res) => {
-    try {
-        const userId = await signUp.findByIdAndDelete(req.params.id)
-        if (!userId) {
-            res.status(400).json({ message: "user not exists" })
-        }
-        res.json({ message: "user deleted successfully" })
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
-    }
-})
-// get user throgh id
-router.get("/getuser/:id", async (req, res) => {
-    try {
-        const userId = await signUp.findById(req.params.id)
-        if (!userId) {
-            res.status(400).json({ message: "user not exists" })
-        }
-        res.json(userId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
-    }
-})
+    res.json(post);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+// get post id end
 
-// add course
-router.post("/addcourse", upload.single("image"), async (req, res) => {
-    try {
-        const { title, duration, level, description } = req.body;
-        const image = req.file ? req.file.filename : null;
-
-        const newCourse = await Course.create({
-            title,
-            duration,
-            level,
-            description,
-            image
-        });
-
-        res.json(newCourse);
-    } catch (error) {
-        console.log(error);
-        res.status(500).send("Internal server error occurred");
+// Route 1: create user using: api/auth/createadmin
+router.post("/createadmin", async (req, res) => {
+  try {
+    const {email} = req.body
+    if(email !== hardcodedUser.email){
+      return res
+        .status(400)
+        .json({ success: false, error: "invalid credentials" });
     }
+    // Check if the user already exists
+    const existingUser = await Admin.findOne({ email: hardcodedUser.email });
+
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ success: false, error: "User already exists" });
+    }
+
+    // Create a new user
+    const newUser = await Admin.create(hardcodedUser);
+
+    res.json({ success: true, user: newUser });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal server error");
+  }
 });
 
-// get all courses
-router.get("/getAllCourses", async (req, res) => {
-    try {
-        const allCourses = await Course.find()
-        res.json(allCourses)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+router.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Check if the entered credentials match a user in the database
+    const user = await Admin.findOne({ email });
+
+    if (!user) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Invalid credentials" });
     }
-})
-// get course throgh id
-router.get("/getcourse/:id", async (req, res) => {
-    try {
-        const courseId = await Course.findById(req.params.id)
-        if (!courseId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json(courseId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+
+    // Compare the entered password with the hashed password in the database
+    const isPasswordMatch = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordMatch) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Invalid credentials" });
     }
-})
-// update course throgh id
-router.put("/updatecourse/:id", async (req, res) => {
-    try {
-        const { title, duration, level, description } = req.body
 
-        const newCourse = ({})
-        if (title) {
-            newCourse.title = title
-        }
-        if (duration) {
-            newCourse.duration = duration
-        }
-        if (level) {
-            newCourse.level = level
-        }
-        if (description) {
-            newCourse.description = description
-        }
+    // Generate a token
+    const token = jwt.sign(
+      { user: { email: user.email } },
+      "TechnicSecretKey",
+      {
+        expiresIn: "1h", // You can adjust the expiration time
+      }
+    );
 
-        let courseId = await Course.findById(req.params.id)
-        if (!courseId) {
-            res.status(400).json({ message: "course not exists" })
-        }
+    res.json({ success: true, token });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal server error");
+  }
+});
 
-        courseId = await Course.findByIdAndUpdate(req.params.id, { $set: newCourse }, { new: true })
-        res.json(courseId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+// Change Password
+router.put("/changepassword", async (req, res) => {
+  const { email, oldPassword, newPassword } = req.body;
+
+  try {
+    // Check if the entered credentials match the user in the database
+    const user = await Admin.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: "User not found" });
     }
-})
-// delete course throgh id
-router.delete("/deletecourse/:id", async (req, res) => {
-    try {
-        const courseId = await Course.findByIdAndDelete(req.params.id)
-        if (!courseId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json({ message: "course deleted successfully" })
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+
+    const isPasswordMatch = await bcrypt.compare(oldPassword, user.password);
+
+    if (!isPasswordMatch) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Old password incorrect" });
     }
-})
 
-// add teacher
-router.post("/addteacher", async (req, res) => {
-    try {
-        const { name, email, number, qualification, experience, description } = req.body
-        const newTeacher = await Teacher.create({
-            name,
-            email,
-            number,
-            qualification,
-            experience,
-            description
-        })
+    // Hash the new password and update it in the database
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedNewPassword;
+    await user.save();
 
-        res.json(newTeacher)
+    res.json({ success: true, message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    res.status(500).send("Internal server error");
+  }
+});
 
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+// Change Password
+router.get("/getposts/:id", async (req, res) => {
+  try {
+    const posts = await Post.findById(req.params.id);
+    res.json(posts);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+router.delete("/delposts/:id", async (req, res) => {
+  try {
+    const posts = await Post.findByIdAndDelete(req.params.id);
+    if (!posts) {
+      return res.status(404).json({ message: "Post not found" });
     }
-})
-// get all techers
-router.get("/getAllTeachers", async (req, res) => {
-    try {
-        const allTeachers = await Teacher.find()
-        res.json(allTeachers)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
-    }
-})
-// get teacher throgh id
-router.get("/getteacher/:id", async (req, res) => {
-    try {
-        const teacherId = await Teacher.findById(req.params.id)
-        if (!teacherId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json(teacherId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
-    }
-})
-// update teacher throgh id
-router.put("/updateteacher/:id", async (req, res) => {
-    try {
-        const { name, email, number, qualification, experience, description } = req.body
+    res.json({ message: "Post deleted successfully" });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
 
-        const newTeacher = ({})
-        if (name) {
-            newTeacher.name = name
-        }
-        if (email) {
-            newTeacher.email = email
-        }
-        if (number) {
-            newTeacher.number = number
-        }
-        if (qualification) {
-            newTeacher.qualification = qualification
-        }
-        if (experience) {
-            newTeacher.experience = experience
-        }
-        if (description) {
-            newTeacher.description = description
-        }
-
-        let teacherId = await Teacher.findById(req.params.id)
-        if (!teacherId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-
-        teacherId = await Teacher.findByIdAndUpdate(req.params.id, { $set: newTeacher }, { new: true })
-        res.json(teacherId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+router.put("/editposts/:id", async (req, res) => {
+  try {
+    const { title, category, content, slug } = req.body;
+    const newPosts = {};
+    if (title) {
+      newPosts.title = title;
     }
-})
-// delete teacher throgh id
-router.delete("/deleteteacher/:id", async (req, res) => {
-    try {
-        const teacherId = await Teacher.findByIdAndDelete(req.params.id)
-        if (!teacherId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json({ message: "course deleted successfully" })
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+    if (category) {
+      newPosts.category = category;
     }
-})
-
-// add school
-router.post("/addschool", async (req, res) => {
-    try {
-        const { name, email, number, city, address, website } = req.body
-        const newSchool = await School.create({
-            name,
-            email,
-            number,
-            city,
-            address,
-            website
-        })
-
-        res.json(newSchool)
-
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+    if (content) {
+      newPosts.content = content;
     }
-})
-// get all schools
-router.get("/getAllSchools", async (req, res) => {
-    try {
-        const allSchools = await School.find()
-        res.json(allSchools)
-    } catch (error) {
-        console.log(error)
-        res.status(500).send("internal server error occured")
+    if (slug) {
+      newPosts.slug = slug;
     }
-})
-// get teacher throgh id
-router.get("/getschool/:id", async (req, res) => {
-    try {
-        const schoolId = await School.findById(req.params.id)
-        if (!schoolId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json(schoolId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
-    }
-})
-// update course throgh id
-router.put("/updateschool/:id", async (req, res) => {
-    try {
-        const { name, email, number, city, address, website } = req.body
 
-        const newSchool = ({})
-        if (name) {
-            newSchool.name = name
-        }
-        if (email) {
-            newSchool.email = email
-        }
-        if (number) {
-            newSchool.number = number
-        }
-        if (city) {
-            newSchool.city = city
-        }
-        if (address) {
-            newSchool.address = address
-        }
-        if (website) {
-            newSchool.website = website
-        }
-
-        let schoolId = await School.findById(req.params.id)
-        if (!schoolId) {
-            return res.status(400).json({ message: "school not exists" })
-        }
-
-        schoolId = await School.findByIdAndUpdate(req.params.id, { $set: newSchool }, { new: true })
-        res.json(schoolId)
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+    let posts = Post.findById(req.params.id);
+    if (!posts) {
+      res.status(404).send({ message: "Posts not find" });
     }
-})
-// delete teacher throgh id
-router.delete("/deleteschool/:id", async (req, res) => {
-    try {
-        const schoolId = await School.findByIdAndDelete(req.params.id)
-        if (!schoolId) {
-            res.status(400).json({ message: "course not exists" })
-        }
-        res.json({ message: "course deleted successfully" })
-    } catch (error) {
-        console.log(error)
-        res.send("internal server error occured")
+    posts = await Post.findByIdAndUpdate(
+      req.params.id,
+      { $set: newPosts },
+      { new: true }
+    );
+    res.json(posts);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+// Category
+router.post(
+  "/category",
+  [body("category", "Enter category")],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+    const { category } = req.body;
+    const Allategory = await Category.create({
+      category,
+    });
+    res.json(Allategory);
+  }
+);
+
+router.get("/getcategory", async (req, res) => {
+  try {
+    const Getcategory = await Category.find({});
+    res.json(Getcategory);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).send("internal Server Error");
+  }
+});
+
+router.get("/getcategory/:id", async (req, res) => {
+  try {
+    const Getcategory = await Category.findById(req.params.id);
+    if (!Getcategory) {
+      return res.status(404).json({ message: "Dont find Category" });
+    }
+    res.json(Getcategory);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+router.delete("/delcategory/:id", async (req, res) => {
+  try {
+    const Getcategory = await Category.findByIdAndDelete(req.params.id);
+    if (!Getcategory) {
+      return res.status(404).json({ message: "Dont find Category" });
+    }
+    res.json({ message: "Category deleted successfully" });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+router.put("/editcategory/:id", async (req, res) => {
+  try {
+    const { category } = req.body;
+    const newCat = {};
+    if (category) {
+      newCat.category = category;
+    }
+
+    let cat = await Category.findById(req.params.id);
+    if (!cat) {
+      res.status(404).json("Category not found");
+    }
+
+    cat = await Category.findByIdAndUpdate(
+      req.params.id,
+      { $set: newCat },
+      { new: true }
+    );
+    res.json(cat);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("internal server Error");
+  }
+});
+
+router.get("/categoryCount", async(req,res)=>{
+  try {
+    const categoryCount = await Category.countDocuments({})
+    res.json(categoryCount)
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).send("internal server error");
+  }
 })
 module.exports = router;
